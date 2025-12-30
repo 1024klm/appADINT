@@ -130,7 +130,7 @@ object UIComponents {
     }
 
     /**
-     * Crée une barre de progression pour le score
+     * Crée une barre de progression pour le score (largeur dynamique)
      */
     private fun createScoreBar(context: Context, score: Int, color: Int): LinearLayout {
         return LinearLayout(context).apply {
@@ -144,14 +144,25 @@ object UIComponents {
                 cornerRadius = 12f
             }
 
+            // Utiliser weight pour largeur dynamique au lieu de 600px hardcodé
             val barContainer = LinearLayout(context).apply {
-                layoutParams = LinearLayout.LayoutParams(600, 24)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dpToPx(context, 20)
+                ).apply {
+                    marginStart = dpToPx(context, 16)
+                    marginEnd = dpToPx(context, 16)
+                }
                 background = barBackground
             }
 
-            val fillWidth = (600 * score / 10)
+            // La barre de remplissage utilise un weight proportionnel
             val barFill = View(context).apply {
-                layoutParams = LinearLayout.LayoutParams(fillWidth, LinearLayout.LayoutParams.MATCH_PARENT)
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    score.toFloat() // weight = score
+                )
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     setColor(color)
@@ -159,8 +170,61 @@ object UIComponents {
                 }
             }
 
+            // Espace vide pour compléter à 10
+            val barEmpty = View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (10 - score).toFloat() // weight = 10 - score
+                )
+            }
+
             barContainer.addView(barFill)
+            if (score < 10) barContainer.addView(barEmpty)
             addView(barContainer)
+        }
+    }
+
+    /**
+     * Convertit dp en pixels
+     */
+    private fun dpToPx(context: Context, dp: Int): Int {
+        return (dp * context.resources.displayMetrics.density).toInt()
+    }
+
+    /**
+     * Crée une carte d'erreur
+     */
+    fun createErrorCard(context: Context, title: String, message: String): LinearLayout {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 24, 32, 24)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(0xFFFFCDD2.toInt())
+                setStroke(2, 0xFFE57373.toInt())
+                cornerRadius = 24f
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 32
+            }
+
+            addView(TextView(context).apply {
+                text = title
+                textSize = 16f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(0xFFC62828.toInt())
+            })
+
+            addView(TextView(context).apply {
+                text = message
+                textSize = 14f
+                setTextColor(0xFFD32F2F.toInt())
+                setPadding(0, 8, 0, 0)
+            })
         }
     }
 

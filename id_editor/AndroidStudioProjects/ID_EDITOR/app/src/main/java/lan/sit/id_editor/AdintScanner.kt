@@ -171,6 +171,9 @@ class AdintScanner(private val context: Context) {
     /**
      * Scanne les applications installées
      * Retourne (locationApps, heavyPermissionApps, success)
+     *
+     * Note: Nécessite QUERY_ALL_PACKAGES sur Android 11+ pour une visibilité complète.
+     * Sans cette permission, seules les apps "visibles" seront listées.
      */
     private fun scanInstalledApps(): Triple<Int, Int, Boolean> {
         var locationAndInternetCount = 0
@@ -186,8 +189,8 @@ class AdintScanner(private val context: Context) {
                 context.packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS)
             }
 
-            // Si la liste est vide ou très petite, QUERY_ALL_PACKAGES manque probablement
-            if (packages.size < 5) {
+            // Liste vide = échec probable (Play Services absent, restriction OEM, etc.)
+            if (packages.isEmpty()) {
                 return Triple(0, 0, false)
             }
 
@@ -213,9 +216,11 @@ class AdintScanner(private val context: Context) {
                 }
             }
 
+            // Succès même si peu d'apps (peut être un device clean ou work profile)
             return Triple(locationAndInternetCount, heavyPermissionCount, true)
 
         } catch (e: Exception) {
+            // SecurityException, etc.
             return Triple(0, 0, false)
         }
     }

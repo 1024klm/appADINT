@@ -9,10 +9,12 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var scanner: AdintScanner
+    private val isScanning = AtomicBoolean(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -21,9 +23,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Lance le scan en arrière-plan
+     * Lance le scan en arrière-plan (avec protection contre les appels multiples)
      */
     private fun runScan() {
+        // Empêcher les scans concurrents
+        if (!isScanning.compareAndSet(false, true)) {
+            return
+        }
+
         showLoadingScreen()
 
         Thread {
@@ -33,8 +40,14 @@ class MainActivity : AppCompatActivity() {
                 Settings.Secure.ANDROID_ID
             )
 
-            runOnUiThread {
-                showMainScreen(result, deviceId)
+            // Vérifier que l'activité est encore valide
+            if (!isFinishing && !isDestroyed) {
+                runOnUiThread {
+                    showMainScreen(result, deviceId)
+                    isScanning.set(false)
+                }
+            } else {
+                isScanning.set(false)
             }
         }.start()
     }
@@ -98,20 +111,11 @@ class MainActivity : AppCompatActivity() {
 
         // === GESTION ERREUR ===
         if (!result.scanSuccessful) {
-            rootLayout.addView(UIComponents.createCard(this).apply {
-                setBackgroundColor(0xFFFFCDD2.toInt())
-                addView(TextView(context).apply {
-                    text = "Erreur lors du scan"
-                    textSize = 16f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(0xFFC62828.toInt())
-                })
-                addView(TextView(context).apply {
-                    text = result.errorMessage ?: "Erreur inconnue"
-                    textSize = 14f
-                    setTextColor(0xFFD32F2F.toInt())
-                })
-            })
+            rootLayout.addView(UIComponents.createErrorCard(
+                this,
+                "Erreur lors du scan",
+                result.errorMessage ?: "Erreur inconnue"
+            ))
         }
 
         // === SECTION 1: SCORE ===
@@ -129,16 +133,17 @@ class MainActivity : AppCompatActivity() {
         // === SECTION 5: IDENTIFIANTS ===
         rootLayout.addView(UIComponents.createSectionTitle(this, "Vos identifiants"))
 
-        // Device ID
+        // Device ID (masqué partiellement)
         rootLayout.addView(UIComponents.createIdentifierCard(
             this,
             "Android Device ID (ANDROID_ID)",
-            deviceId,
+            maskIdentifier(deviceId),
             "Identifiant stable, modifiable uniquement par réinitialisation d'usine. " +
             "Son usage pour l'ADINT est officiellement interdit par Google."
         ))
 
-        // Advertising ID
+        // Advertising ID (masqué par défaut pour cohérence privacy)
+        val maskedGaid = result.gaid?.let { maskIdentifier(it) } ?: "Non disponible"
         val latStatus = if (result.limitAdTrackingEnabled) {
             "LAT activé - vous avez demandé la limitation du suivi."
         } else {
@@ -148,7 +153,7 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(UIComponents.createIdentifierCard(
             this,
             "Google Advertising ID (GAID)",
-            result.gaid ?: "Non disponible (Play Services absent ?)",
+            maskedGaid,
             "$latStatus\n\nCet ID peut être réinitialisé ou supprimé dans les paramètres.",
             showResetButton = true,
             onResetClick = {
@@ -172,5 +177,16 @@ class MainActivity : AppCompatActivity() {
 
         scrollView.addView(rootLayout)
         setContentView(scrollView)
+    }
+
+    /**
+     * Masque un identifiant pour la privacy (affiche premiers et derniers caractères)
+     * Ex: "abc12345-wxyz" -> "abc1...wxyz"
+     */
+    private fun maskIdentifier(id: String): String {
+        if (id.length <= 8) return id
+        val start = id.take(4)
+        val end = id.takeLast(4)
+        return "$start...$end"
     }
 }
