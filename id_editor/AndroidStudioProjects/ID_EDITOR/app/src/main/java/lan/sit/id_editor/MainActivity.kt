@@ -34,19 +34,21 @@ class MainActivity : AppCompatActivity() {
         showLoadingScreen()
 
         Thread {
-            val result = scanner.scan()
-            val deviceId = Settings.Secure.getString(
-                contentResolver,
-                Settings.Secure.ANDROID_ID
-            )
+            try {
+                val result = scanner.scan()
+                val deviceId = Settings.Secure.getString(
+                    contentResolver,
+                    Settings.Secure.ANDROID_ID
+                )
 
-            // Vérifier que l'activité est encore valide
-            if (!isFinishing && !isDestroyed) {
-                runOnUiThread {
-                    showMainScreen(result, deviceId)
-                    isScanning.set(false)
+                // Vérifier que l'activité est encore valide
+                if (!isFinishing && !isDestroyed) {
+                    runOnUiThread {
+                        showMainScreen(result, deviceId)
+                    }
                 }
-            } else {
+            } finally {
+                // Toujours libérer le verrou, même en cas d'exception
                 isScanning.set(false)
             }
         }.start()
@@ -133,16 +135,17 @@ class MainActivity : AppCompatActivity() {
         // === SECTION 5: IDENTIFIANTS ===
         rootLayout.addView(UIComponents.createSectionTitle(this, "Vos identifiants"))
 
-        // Device ID (masqué partiellement)
+        // Device ID (masqué, avec bouton copier)
         rootLayout.addView(UIComponents.createIdentifierCard(
-            this,
-            "Android Device ID (ANDROID_ID)",
-            maskIdentifier(deviceId),
-            "Identifiant stable, modifiable uniquement par réinitialisation d'usine. " +
-            "Son usage pour l'ADINT est officiellement interdit par Google."
+            context = this,
+            label = "Android Device ID (ANDROID_ID)",
+            displayValue = maskIdentifier(deviceId),
+            description = "Identifiant stable, modifiable uniquement par réinitialisation d'usine. " +
+                "Son usage pour l'ADINT est officiellement interdit par Google.",
+            realValue = deviceId  // Pour le bouton Copier
         ))
 
-        // Advertising ID (masqué par défaut pour cohérence privacy)
+        // Advertising ID (masqué, avec boutons Copier + Gérer)
         val maskedGaid = result.gaid?.let { maskIdentifier(it) } ?: "Non disponible"
         val latStatus = if (result.limitAdTrackingEnabled) {
             "LAT activé - vous avez demandé la limitation du suivi."
@@ -151,23 +154,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         rootLayout.addView(UIComponents.createIdentifierCard(
-            this,
-            "Google Advertising ID (GAID)",
-            maskedGaid,
-            "$latStatus\n\nCet ID peut être réinitialisé ou supprimé dans les paramètres.",
-            showResetButton = true,
-            onResetClick = {
+            context = this,
+            label = "Google Advertising ID (GAID)",
+            displayValue = maskedGaid,
+            description = "$latStatus\n\nCet ID peut être réinitialisé ou supprimé dans les paramètres.",
+            realValue = result.gaid,  // Pour le bouton Copier
+            showActionButton = true,
+            actionButtonText = "Gérer",
+            onActionClick = {
                 startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS))
             }
         ))
 
-        // UUID/Firebase
+        // UUID/Firebase (pas de bouton copier car non accessible)
         rootLayout.addView(UIComponents.createIdentifierCard(
-            this,
-            "UUID / Firebase Instance ID",
-            "Non accessible sans root",
-            "Ces identifiants sont propres à chaque application et stockés dans " +
-            "leurs données privées. Seul un accès root permet de les lire."
+            context = this,
+            label = "UUID / Firebase Instance ID",
+            displayValue = "Non accessible sans root",
+            description = "Ces identifiants sont propres à chaque application et stockés dans " +
+                "leurs données privées. Seul un accès root permet de les lire."
         ))
 
         // === BOUTON RELANCER ===

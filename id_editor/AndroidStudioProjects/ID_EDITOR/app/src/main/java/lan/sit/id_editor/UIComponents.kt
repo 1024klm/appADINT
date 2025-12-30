@@ -1,5 +1,7 @@
 package lan.sit.id_editor
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -12,6 +14,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 
 /**
  * Composants UI réutilisables pour l'application ADINT
@@ -156,40 +159,43 @@ object UIComponents {
                 background = barBackground
             }
 
-            // La barre de remplissage utilise un weight proportionnel
-            val barFill = View(context).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    score.toFloat() // weight = score
-                )
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    setColor(color)
-                    cornerRadius = 12f
+            // La barre de remplissage (seulement si score > 0)
+            if (score > 0) {
+                val barFill = View(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        score.toFloat()
+                    )
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        setColor(color)
+                        cornerRadius = 12f
+                    }
                 }
+                barContainer.addView(barFill)
             }
 
-            // Espace vide pour compléter à 10
-            val barEmpty = View(context).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    (10 - score).toFloat() // weight = 10 - score
-                )
+            // Espace vide pour compléter à 10 (seulement si score < 10)
+            if (score < 10) {
+                val barEmpty = View(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        (10 - score).toFloat()
+                    )
+                }
+                barContainer.addView(barEmpty)
             }
-
-            barContainer.addView(barFill)
-            if (score < 10) barContainer.addView(barEmpty)
             addView(barContainer)
         }
     }
 
     /**
-     * Convertit dp en pixels
+     * Convertit dp en pixels (avec arrondi correct)
      */
     private fun dpToPx(context: Context, dp: Int): Int {
-        return (dp * context.resources.displayMetrics.density).toInt()
+        return (dp * context.resources.displayMetrics.density + 0.5f).toInt()
     }
 
     /**
@@ -438,14 +444,17 @@ object UIComponents {
 
     /**
      * Crée une carte d'identifiant
+     * @param realValue Valeur réelle (non masquée) pour la copie - si null, pas de bouton copier
      */
     fun createIdentifierCard(
         context: Context,
         label: String,
-        value: String?,
+        displayValue: String?,
         description: String,
-        showResetButton: Boolean = false,
-        onResetClick: (() -> Unit)? = null
+        realValue: String? = null,
+        showActionButton: Boolean = false,
+        actionButtonText: String = "Gérer",
+        onActionClick: (() -> Unit)? = null
     ): LinearLayout {
         return createCard(context).apply {
             addView(TextView(context).apply {
@@ -455,7 +464,7 @@ object UIComponents {
             })
 
             addView(TextView(context).apply {
-                text = value ?: "Non disponible"
+                text = displayValue ?: "Non disponible"
                 textSize = 16f
                 setTypeface(Typeface.MONOSPACE)
                 setTextColor(0xFF000000.toInt())
@@ -469,13 +478,60 @@ object UIComponents {
                 setTextColor(0xFF777777.toInt())
             })
 
-            if (showResetButton && onResetClick != null) {
-                addView(Button(context).apply {
-                    text = "Gérer cet identifiant"
-                    setBackgroundColor(0xFF2196F3.toInt())
+            // Ligne de boutons
+            val buttonsRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            // Bouton Copier (si realValue fournie)
+            if (realValue != null) {
+                buttonsRow.addView(Button(context).apply {
+                    text = "Copier"
+                    textSize = 12f
                     setTextColor(Color.WHITE)
-                    setOnClickListener { onResetClick() }
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { marginEnd = 16 }
+
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        setColor(0xFF607D8B.toInt())
+                        cornerRadius = 8f
+                    }
+
+                    setOnClickListener {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText(label, realValue)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Copié dans le presse-papiers", Toast.LENGTH_SHORT).show()
+                    }
                 })
+            }
+
+            // Bouton action (gérer, etc.)
+            if (showActionButton && onActionClick != null) {
+                buttonsRow.addView(Button(context).apply {
+                    text = actionButtonText
+                    textSize = 12f
+                    setTextColor(Color.WHITE)
+
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        setColor(0xFF2196F3.toInt())
+                        cornerRadius = 8f
+                    }
+
+                    setOnClickListener { onActionClick() }
+                })
+            }
+
+            if (buttonsRow.childCount > 0) {
+                addView(buttonsRow)
             }
         }
     }
