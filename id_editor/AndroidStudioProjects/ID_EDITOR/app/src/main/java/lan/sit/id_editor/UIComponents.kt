@@ -5,12 +5,12 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 
 /**
@@ -49,14 +49,23 @@ object UIComponents {
         val riskLevel = scanner.getRiskLevel(result.score)
 
         return createCard(context).apply {
-            // Titre
+            // Titre avec mention "heuristique"
             addView(TextView(context).apply {
-                text = "SCORE D'EXPOSITION ADINT"
-                textSize = 16f
+                text = "SCORE D'EXPOSITION (heuristique)"
+                textSize = 14f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(0xFF333333.toInt())
                 gravity = Gravity.CENTER
-                setPadding(0, 0, 0, 24)
+                setPadding(0, 0, 0, 8)
+            })
+
+            // Sous-titre explicatif
+            addView(TextView(context).apply {
+                text = "Basé sur des signaux observables"
+                textSize = 11f
+                setTextColor(0xFF888888.toInt())
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, 16)
             })
 
             // Score grand format
@@ -83,32 +92,33 @@ object UIComponents {
 
             // Détails du calcul
             addView(TextView(context).apply {
-                text = "Détails du calcul :"
+                text = "Composition du score :"
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(0xFF555555.toInt())
                 setPadding(0, 24, 0, 8)
             })
 
-            // Liste des points
+            // Liste des points (wording corrigé)
             val details = mutableListOf<String>()
-            if (!result.limitTracking) {
-                details.add("• Pub personnalisée activée : +${AdintScanner.POINTS_PERSONALIZED_ADS}")
+            if (!result.limitAdTrackingEnabled) {
+                details.add("• LAT non activé : +${AdintScanner.POINTS_LAT_DISABLED}")
             }
-            if (result.gaid != null && result.gaid != "00000000-0000-0000-0000-000000000000") {
-                details.add("• ID publicitaire accessible : +${AdintScanner.POINTS_GAID_ACCESSIBLE}")
+            val gaidValid = result.gaid != null && result.gaid != "00000000-0000-0000-0000-000000000000"
+            if (gaidValid) {
+                details.add("• GAID accessible : +${AdintScanner.POINTS_GAID_ACCESSIBLE}")
             }
             if (result.appsWithLocationAndInternet > 0) {
                 val points = minOf(result.appsWithLocationAndInternet, AdintScanner.MAX_RISKY_APP_POINTS)
-                details.add("• ${result.appsWithLocationAndInternet} app(s) localisation+internet : +$points")
+                details.add("• ${result.appsWithLocationAndInternet} app(s) loc+net : +$points")
             }
             if (result.appsWithManyPermissions > 0) {
                 val points = minOf(result.appsWithManyPermissions, AdintScanner.MAX_PERMISSION_HEAVY_POINTS)
-                details.add("• ${result.appsWithManyPermissions} app(s) nombreuses permissions : +$points")
+                details.add("• ${result.appsWithManyPermissions} app(s) >10 perms : +$points")
             }
 
             if (details.isEmpty()) {
-                details.add("• Aucun facteur de risque détecté")
+                details.add("• Aucun signal de risque détecté")
             }
 
             addView(TextView(context).apply {
@@ -128,7 +138,6 @@ object UIComponents {
             gravity = Gravity.CENTER
             setPadding(0, 8, 0, 8)
 
-            // Fond de la barre
             val barBackground = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 setColor(0xFFE0E0E0.toInt())
@@ -140,7 +149,6 @@ object UIComponents {
                 background = barBackground
             }
 
-            // Barre de remplissage
             val fillWidth = (600 * score / 10)
             val barFill = View(context).apply {
                 layoutParams = LinearLayout.LayoutParams(fillWidth, LinearLayout.LayoutParams.MATCH_PARENT)
@@ -157,13 +165,12 @@ object UIComponents {
     }
 
     /**
-     * Crée la carte des problèmes détectés
+     * Crée la carte des signaux détectés (pas "problèmes")
      */
     fun createProblemsCard(context: Context, problems: List<Problem>): LinearLayout {
         return createCard(context).apply {
-            // Titre
             addView(TextView(context).apply {
-                text = "PROBLÈMES DÉTECTÉS (${problems.size})"
+                text = "SIGNAUX DÉTECTÉS (${problems.size})"
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(0xFF333333.toInt())
@@ -172,7 +179,7 @@ object UIComponents {
 
             if (problems.isEmpty()) {
                 addView(TextView(context).apply {
-                    text = "Aucun problème détecté"
+                    text = "Aucun signal d'alerte"
                     textSize = 14f
                     setTextColor(0xFF4CAF50.toInt())
                 })
@@ -184,15 +191,7 @@ object UIComponents {
         }
     }
 
-    /**
-     * Crée un élément de problème
-     */
     private fun createProblemItem(context: Context, problem: Problem): LinearLayout {
-        val icon = when (problem.severity) {
-            Severity.CRITICAL -> "●"  // Rouge
-            Severity.WARNING -> "●"   // Orange
-            Severity.INFO -> "●"      // Bleu
-        }
         val iconColor = when (problem.severity) {
             Severity.CRITICAL -> 0xFFF44336.toInt()
             Severity.WARNING -> 0xFFFF9800.toInt()
@@ -203,15 +202,13 @@ object UIComponents {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 8, 0, 8)
 
-            // Icône
             addView(TextView(context).apply {
-                text = icon
+                text = "●"
                 textSize = 16f
                 setTextColor(iconColor)
                 setPadding(0, 0, 16, 0)
             })
 
-            // Texte
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
@@ -240,46 +237,31 @@ object UIComponents {
      */
     fun createActionsCard(context: Context, result: AdintResult): LinearLayout {
         return createCard(context).apply {
-            // Titre
             addView(TextView(context).apply {
-                text = "ACTIONS RECOMMANDÉES"
+                text = "ACTIONS POSSIBLES"
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(0xFF333333.toInt())
                 setPadding(0, 0, 0, 16)
             })
 
-            // Action 1: Réinitialiser l'ID pub
-            if (result.gaid != null) {
-                addView(createActionButton(
-                    context,
-                    "Réinitialiser l'ID publicitaire",
-                    "Ouvre les paramètres de confidentialité",
-                    Settings.ACTION_PRIVACY_SETTINGS
-                ))
-            }
+            // Gérer ID pub
+            addView(createActionButton(
+                context,
+                "Gérer l'ID publicitaire",
+                "Réinitialiser ou limiter le suivi",
+                Settings.ACTION_PRIVACY_SETTINGS
+            ))
 
-            // Action 2: Désactiver pub perso
-            if (!result.limitTracking) {
-                addView(createActionButton(
-                    context,
-                    "Désactiver la personnalisation",
-                    "Limite le suivi publicitaire",
-                    Settings.ACTION_PRIVACY_SETTINGS
-                ))
-            }
+            // Permissions des apps
+            addView(createActionButton(
+                context,
+                "Permissions des applications",
+                "Vérifier les accès accordés",
+                Settings.ACTION_APPLICATION_SETTINGS
+            ))
 
-            // Action 3: Vérifier les apps
-            if (result.appsWithLocationAndInternet > 0) {
-                addView(createActionButton(
-                    context,
-                    "Vérifier ${result.appsWithLocationAndInternet} app(s) à risque",
-                    "Gérer les permissions des applications",
-                    Settings.ACTION_APPLICATION_SETTINGS
-                ))
-            }
-
-            // Action 4: Localisation
+            // Localisation
             addView(createActionButton(
                 context,
                 "Paramètres de localisation",
@@ -287,21 +269,18 @@ object UIComponents {
                 Settings.ACTION_LOCATION_SOURCE_SETTINGS
             ))
 
-            // Action 5: DNS privé (Android 9+)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            // DNS privé (Android 9+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 addView(createActionButton(
                     context,
-                    "Configurer un DNS privé",
-                    "Améliore la confidentialité réseau",
+                    "Réseau / DNS privé",
+                    "Améliorer la confidentialité réseau",
                     Settings.ACTION_WIRELESS_SETTINGS
                 ))
             }
         }
     }
 
-    /**
-     * Crée un bouton d'action vers les paramètres système
-     */
     private fun createActionButton(
         context: Context,
         title: String,
@@ -314,14 +293,9 @@ object UIComponents {
             isClickable = true
             isFocusable = true
 
-            // Conteneur texte
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                )
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
 
                 addView(TextView(context).apply {
                     text = title
@@ -336,7 +310,6 @@ object UIComponents {
                 })
             })
 
-            // Bouton flèche
             addView(Button(context).apply {
                 text = "→"
                 textSize = 18f
@@ -353,7 +326,6 @@ object UIComponents {
                     try {
                         context.startActivity(Intent(settingsAction))
                     } catch (e: Exception) {
-                        // Fallback vers les paramètres généraux
                         context.startActivity(Intent(Settings.ACTION_SETTINGS))
                     }
                 }
@@ -362,7 +334,46 @@ object UIComponents {
     }
 
     /**
-     * Crée une carte d'identifiant (réutilisation du style existant)
+     * Crée la carte des LIMITES TECHNIQUES
+     */
+    fun createLimitationsCard(context: Context): LinearLayout {
+        return createCard(context).apply {
+            // Fond légèrement différent pour distinguer
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(0xFFFFF8E1.toInt()) // Jaune pâle
+                setStroke(2, 0xFFFFE082.toInt())
+                cornerRadius = 24f
+            }
+
+            addView(TextView(context).apply {
+                text = "LIMITES DE CE DIAGNOSTIC"
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(0xFF6D4C41.toInt())
+                setPadding(0, 0, 0, 12)
+            })
+
+            val limitations = listOf(
+                "• Ne détecte PAS les SDK publicitaires intégrés",
+                "• Ne surveille PAS le trafic réseau réel",
+                "• Ne détecte PAS le fingerprinting (canvas, audio...)",
+                "• Le flag LAT est déclaratif, pas une garantie",
+                "• Les permissions déclarées ≠ permissions utilisées",
+                "• Prototype de laboratoire, non destiné au Play Store"
+            )
+
+            addView(TextView(context).apply {
+                text = limitations.joinToString("\n")
+                textSize = 12f
+                setTextColor(0xFF5D4037.toInt())
+                setLineSpacing(4f, 1f)
+            })
+        }
+    }
+
+    /**
+     * Crée une carte d'identifiant
      */
     fun createIdentifierCard(
         context: Context,
@@ -373,14 +384,12 @@ object UIComponents {
         onResetClick: (() -> Unit)? = null
     ): LinearLayout {
         return createCard(context).apply {
-            // Label
             addView(TextView(context).apply {
                 text = label
                 textSize = 14f
                 setTextColor(0xFF777777.toInt())
             })
 
-            // Valeur
             addView(TextView(context).apply {
                 text = value ?: "Non disponible"
                 textSize = 16f
@@ -389,7 +398,6 @@ object UIComponents {
                 setPadding(0, 8, 0, 16)
             })
 
-            // Description
             addView(TextView(context).apply {
                 text = description
                 textSize = 14f
@@ -397,11 +405,10 @@ object UIComponents {
                 setTextColor(0xFF777777.toInt())
             })
 
-            // Bouton de réinitialisation (optionnel)
             if (showResetButton && onResetClick != null) {
                 addView(Button(context).apply {
-                    text = "Supprimer l'Advertising ID"
-                    setBackgroundColor(Color.RED)
+                    text = "Gérer cet identifiant"
+                    setBackgroundColor(0xFF2196F3.toInt())
                     setTextColor(Color.WHITE)
                     setOnClickListener { onResetClick() }
                 })
@@ -419,6 +426,33 @@ object UIComponents {
             setTypeface(null, Typeface.BOLD)
             setTextColor(0xFF333333.toInt())
             setPadding(0, 32, 0, 16)
+        }
+    }
+
+    /**
+     * Crée un bouton de relance du scan
+     */
+    fun createRescanButton(context: Context, onClick: () -> Unit): Button {
+        return Button(context).apply {
+            text = "Relancer l'analyse"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(0xFF607D8B.toInt())
+                cornerRadius = 16f
+            }
+
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = 24
+                bottomMargin = 48
+            }
+
+            setOnClickListener { onClick() }
         }
     }
 }

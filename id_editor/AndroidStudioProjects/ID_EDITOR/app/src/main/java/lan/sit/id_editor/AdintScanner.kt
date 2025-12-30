@@ -9,18 +9,24 @@ import com.google.android.gms.ads.identifier.AdvertisingIdClient
 
 /**
  * Résultat du scan ADINT
+ *
+ * IMPORTANT: Ce scan est une HEURISTIQUE basée sur des signaux observables.
+ * Il ne détecte PAS : les SDK publicitaires, le fingerprinting, les destinations réseau,
+ * ni le tracking réel effectué par les applications.
  */
 data class AdintResult(
-    val score: Int,                    // Score sur 10
-    val gaid: String?,                 // Google Advertising ID
-    val limitTracking: Boolean,        // Si le tracking est limité
-    val appsWithLocationAndInternet: Int,  // Nombre d'apps à risque
-    val appsWithManyPermissions: Int,  // Apps avec >10 permissions
-    val problems: List<Problem>        // Liste des problèmes détectés
+    val score: Int,                        // Score heuristique sur 10
+    val gaid: String?,                     // Google Advertising ID
+    val limitAdTrackingEnabled: Boolean,   // Flag LAT (Limit Ad Tracking) de Play Services
+    val appsWithLocationAndInternet: Int,  // Nombre d'apps avec ces permissions
+    val appsWithManyPermissions: Int,      // Apps avec >10 permissions
+    val problems: List<Problem>,           // Signaux d'alerte détectés
+    val scanSuccessful: Boolean = true,    // Si le scan a pu s'exécuter
+    val errorMessage: String? = null       // Message d'erreur éventuel
 )
 
 data class Problem(
-    val severity: Severity,  // CRITICAL, WARNING, INFO
+    val severity: Severity,
     val title: String,
     val description: String
 )
@@ -28,20 +34,27 @@ data class Problem(
 enum class Severity { CRITICAL, WARNING, INFO }
 
 enum class RiskLevel(val label: String, val color: Int) {
-    LOW("Faible", 0xFF4CAF50.toInt()),      // Vert
-    MEDIUM("Moyen", 0xFFFF9800.toInt()),    // Orange
-    HIGH("Élevé", 0xFFF44336.toInt())       // Rouge
+    LOW("Faible", 0xFF4CAF50.toInt()),
+    MEDIUM("Moyen", 0xFFFF9800.toInt()),
+    HIGH("Élevé", 0xFFF44336.toInt())
 }
 
 /**
- * Scanner ADINT - Analyse l'exposition du device
+ * Scanner ADINT - Analyse la surface d'exposition publicitaire
+ *
+ * LIMITES TECHNIQUES :
+ * - Ne détecte pas les SDK publicitaires intégrés aux apps
+ * - Ne détecte pas le fingerprinting (canvas, audio, etc.)
+ * - Ne surveille pas le trafic réseau
+ * - Le flag LAT n'est qu'une déclaration, pas une garantie
+ * - Le scan des apps nécessite QUERY_ALL_PACKAGES (Android 11+)
  */
 class AdintScanner(private val context: Context) {
 
     companion object {
-        // Points pour le calcul du score
-        const val POINTS_PERSONALIZED_ADS = 3
-        const val POINTS_GAID_ACCESSIBLE = 2
+        // Points pour le calcul du score (HEURISTIQUE)
+        const val POINTS_LAT_DISABLED = 3       // LAT non activé
+        const val POINTS_GAID_ACCESSIBLE = 2    // GAID récupérable
         const val POINTS_PER_RISKY_APP = 1
         const val MAX_RISKY_APP_POINTS = 3
         const val POINTS_PER_PERMISSION_HEAVY_APP = 1
@@ -50,64 +63,95 @@ class AdintScanner(private val context: Context) {
     }
 
     /**
-     * Exécute le scan complet (doit être appelé depuis un thread background)
+     * Exécute le scan (doit être appelé depuis un thread background)
      */
     fun scan(): AdintResult {
+        return try {
+            performScan()
+        } catch (e: Exception) {
+            // Retourner un résultat d'erreur plutôt que crasher
+            AdintResult(
+                score = 0,
+                gaid = null,
+                limitAdTrackingEnabled = true,
+                appsWithLocationAndInternet = 0,
+                appsWithManyPermissions = 0,
+                problems = emptyList(),
+                scanSuccessful = false,
+                errorMessage = "Erreur lors du scan : ${e.message}"
+            )
+        }
+    }
+
+    private fun performScan(): AdintResult {
         // Récupérer les infos publicitaires
-        val (gaid, limitTracking) = getAdvertisingInfo()
+        val (gaid, latEnabled) = getAdvertisingInfo()
 
-        // Scanner les applications
-        val (locationApps, heavyPermissionApps) = scanInstalledApps()
+        // Scanner les applications (peut échouer sans QUERY_ALL_PACKAGES)
+        val (locationApps, heavyPermissionApps, appScanSuccessful) = scanInstalledApps()
 
-        // Construire la liste des problèmes
+        // Construire la liste des signaux d'alerte
         val problems = mutableListOf<Problem>()
 
-        // Problème 1: Pub personnalisée activée
-        if (!limitTracking) {
+        // Signal 1: LAT non activé
+        // IMPORTANT: On ne dit PAS "pub personnalisée activée" car ce n'est pas vérifiable
+        if (!latEnabled) {
             problems.add(Problem(
                 Severity.CRITICAL,
-                "Annonces personnalisées activées",
-                "Les applications peuvent utiliser votre ID publicitaire pour créer un profil de vos habitudes."
+                "Limitation du suivi (LAT) non activée",
+                "Le flag 'Limit Ad Tracking' n'est pas activé dans les paramètres Google. " +
+                "Cela signifie que les apps PEUVENT utiliser votre ID pub, mais pas qu'elles le font."
             ))
         }
 
-        // Problème 2: GAID accessible
-        if (gaid != null && gaid != "00000000-0000-0000-0000-000000000000") {
-            problems.add(Problem(
-                Severity.CRITICAL,
-                "ID publicitaire accessible",
-                "Votre identifiant publicitaire ($gaid) peut être utilisé pour vous suivre entre les applications."
-            ))
-        }
-
-        // Problème 3: Apps avec localisation + internet
-        if (locationApps > 0) {
+        // Signal 2: GAID accessible (non null et non zeros)
+        val gaidIsValid = gaid != null && gaid != "00000000-0000-0000-0000-000000000000"
+        if (gaidIsValid) {
             problems.add(Problem(
                 Severity.WARNING,
-                "$locationApps app(s) avec localisation + internet",
-                "Ces applications peuvent potentiellement partager votre position avec des tiers."
+                "ID publicitaire (GAID) accessible",
+                "Votre GAID est : $gaid. Cet identifiant peut être lu par les apps pour vous suivre entre applications."
             ))
         }
 
-        // Problème 4: Apps avec beaucoup de permissions
-        if (heavyPermissionApps > 0) {
+        // Signal 3: Apps avec localisation + internet (si scan réussi)
+        if (appScanSuccessful && locationApps > 0) {
             problems.add(Problem(
                 Severity.WARNING,
-                "$heavyPermissionApps app(s) avec nombreuses permissions",
-                "Ces applications ont accès à plus de $PERMISSION_THRESHOLD permissions, ce qui augmente la surface d'attaque."
+                "$locationApps app(s) : localisation + internet",
+                "Ces apps DÉCLARENT ces permissions. Cela ne prouve pas qu'elles envoient votre position à des tiers."
             ))
         }
 
-        // Calculer le score
-        val score = calculateScore(limitTracking, gaid, locationApps, heavyPermissionApps)
+        // Signal 4: Apps avec beaucoup de permissions
+        if (appScanSuccessful && heavyPermissionApps > 0) {
+            problems.add(Problem(
+                Severity.INFO,
+                "$heavyPermissionApps app(s) avec >$PERMISSION_THRESHOLD permissions",
+                "Un grand nombre de permissions augmente la surface d'attaque potentielle."
+            ))
+        }
+
+        // Avertissement si scan apps a échoué
+        if (!appScanSuccessful) {
+            problems.add(Problem(
+                Severity.INFO,
+                "Scan des applications non disponible",
+                "Android ${Build.VERSION.SDK_INT} restreint l'accès à la liste des apps installées."
+            ))
+        }
+
+        // Calculer le score heuristique
+        val score = calculateScore(latEnabled, gaidIsValid, locationApps, heavyPermissionApps)
 
         return AdintResult(
             score = score,
             gaid = gaid,
-            limitTracking = limitTracking,
+            limitAdTrackingEnabled = latEnabled,
             appsWithLocationAndInternet = locationApps,
             appsWithManyPermissions = heavyPermissionApps,
-            problems = problems
+            problems = problems,
+            scanSuccessful = true
         )
     }
 
@@ -119,14 +163,16 @@ class AdintScanner(private val context: Context) {
             val adInfo = AdvertisingIdClient.getAdvertisingIdInfo(context)
             Pair(adInfo.id, adInfo.isLimitAdTrackingEnabled)
         } catch (e: Exception) {
-            Pair(null, true) // En cas d'erreur, on considère le tracking limité
+            // Play Services absent ou erreur
+            Pair(null, true)
         }
     }
 
     /**
-     * Scanne les applications installées pour trouver celles à risque
+     * Scanne les applications installées
+     * Retourne (locationApps, heavyPermissionApps, success)
      */
-    private fun scanInstalledApps(): Pair<Int, Int> {
+    private fun scanInstalledApps(): Triple<Int, Int, Boolean> {
         var locationAndInternetCount = 0
         var heavyPermissionCount = 0
 
@@ -140,10 +186,15 @@ class AdintScanner(private val context: Context) {
                 context.packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS)
             }
 
+            // Si la liste est vide ou très petite, QUERY_ALL_PACKAGES manque probablement
+            if (packages.size < 5) {
+                return Triple(0, 0, false)
+            }
+
             for (packageInfo in packages) {
                 val permissions = packageInfo.requestedPermissions ?: continue
 
-                // Vérifier si l'app a localisation + internet
+                // Vérifier localisation + internet
                 val hasLocation = permissions.any {
                     it == Manifest.permission.ACCESS_FINE_LOCATION ||
                     it == Manifest.permission.ACCESS_COARSE_LOCATION
@@ -151,66 +202,50 @@ class AdintScanner(private val context: Context) {
                 val hasInternet = permissions.contains(Manifest.permission.INTERNET)
 
                 if (hasLocation && hasInternet) {
-                    // Exclure notre propre app et les apps système
-                    if (packageInfo.packageName != context.packageName &&
-                        !isSystemApp(packageInfo)) {
+                    if (packageInfo.packageName != context.packageName && !isSystemApp(packageInfo)) {
                         locationAndInternetCount++
                     }
                 }
 
-                // Vérifier si l'app a beaucoup de permissions
+                // Vérifier nombre de permissions
                 if (permissions.size > PERMISSION_THRESHOLD && !isSystemApp(packageInfo)) {
                     heavyPermissionCount++
                 }
             }
-        } catch (e: Exception) {
-            // Permission QUERY_ALL_PACKAGES peut être refusée
-        }
 
-        return Pair(locationAndInternetCount, heavyPermissionCount)
+            return Triple(locationAndInternetCount, heavyPermissionCount, true)
+
+        } catch (e: Exception) {
+            return Triple(0, 0, false)
+        }
     }
 
-    /**
-     * Vérifie si une app est une app système
-     */
     private fun isSystemApp(packageInfo: PackageInfo): Boolean {
         return (packageInfo.applicationInfo?.flags ?: 0) and
                android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
     }
 
     /**
-     * Calcule le score d'exposition ADINT (0-10)
+     * Calcule le score heuristique (0-10)
+     *
+     * ATTENTION : Ce score est INDICATIF et non scientifique.
      */
     private fun calculateScore(
-        limitTracking: Boolean,
-        gaid: String?,
+        latEnabled: Boolean,
+        gaidAccessible: Boolean,
         locationApps: Int,
         heavyPermissionApps: Int
     ): Int {
         var score = 0
 
-        // +3 si pub personnalisée activée
-        if (!limitTracking) {
-            score += POINTS_PERSONALIZED_ADS
-        }
-
-        // +2 si GAID accessible
-        if (gaid != null && gaid != "00000000-0000-0000-0000-000000000000") {
-            score += POINTS_GAID_ACCESSIBLE
-        }
-
-        // +1 par app à risque (max 3)
+        if (!latEnabled) score += POINTS_LAT_DISABLED
+        if (gaidAccessible) score += POINTS_GAID_ACCESSIBLE
         score += minOf(locationApps, MAX_RISKY_APP_POINTS) * POINTS_PER_RISKY_APP
-
-        // +1 par app avec beaucoup de permissions (max 2)
         score += minOf(heavyPermissionApps, MAX_PERMISSION_HEAVY_POINTS) * POINTS_PER_PERMISSION_HEAVY_APP
 
         return minOf(score, 10)
     }
 
-    /**
-     * Détermine le niveau de risque basé sur le score
-     */
     fun getRiskLevel(score: Int): RiskLevel {
         return when {
             score <= 2 -> RiskLevel.LOW
