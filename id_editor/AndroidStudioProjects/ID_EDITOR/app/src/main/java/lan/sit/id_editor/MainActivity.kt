@@ -1,160 +1,151 @@
 package lan.sit.id_editor
 
+import android.content.Intent
 import android.graphics.Typeface
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.view.Gravity
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.gms.ads.identifier.AdvertisingIdClient
-import android.content.Intent
-import android.widget.Button
-
 
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var scanner: AdintScanner
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Récupération du device ID
-        val deviceId = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ANDROID_ID
-        )
+        scanner = AdintScanner(this)
 
-        // Création d'un thread pour récupérer l' AD ID
-        fun fetchAdId(callback: (adId: String?, limitTracking: Boolean) -> Unit) {
-            Thread(Runnable {
-                try {
-                    val adInfo: AdvertisingIdClient.Info = AdvertisingIdClient.getAdvertisingIdInfo(this)
+        // Afficher un écran de chargement
+        showLoadingScreen()
 
-                    val adId: String? = adInfo.getId()
-                    val limitTracking: Boolean = adInfo.isLimitAdTrackingEnabled() // Signifie que les apps peuvent utiliser l'ID pour créer des pubs personnalisées
-                    callback(adId, limitTracking) // Récupération de la valeur sur le thread principal
-                    Log.d("AD_ID", "Advertising ID: " + adId)
-                    Log.d("AD_ID", "Limit Ad Tracking: " + limitTracking)
-                } catch (e: Exception) {
-                    val msg = "Failed to get Ad ID"
-                    Log.e("AD_ID", msg, e)
-                }
-            }).start()
-        }
+        // Lancer le scan en arrière-plan
+        Thread {
+            val result = scanner.scan()
 
-        fetchAdId { adId, limitTracking ->
+            // Récupérer le Device ID
+            val deviceId = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ANDROID_ID
+            )
+
             runOnUiThread {
-                val infoList = listOf(
-                    listOf(
-                        "Android Device ID",
-                        deviceId,
-                        "Cet identifiant n'est modifiable qu'à la réinitialisation d'usine de l'appareil. Son usage pour l'ADINT est explicitement interdit."
-                    ),
-                    listOf(
-                        "Advertising ID",
-                        adId,
-                        "Il est possible de supprimer cet identifiant depuis les paramètres de confidentialité (Aller dans autres paramètres > Annonces)\n\nLe limit Tracking est fixé à $limitTracking. Cela signifie que les applications peuvent s'en servir pour créer des pubs personnalisées."
-                    ),
-                            listOf(
-                            "UUID/Firebase ID/GUID",
-                    "null",
-                    "Identifiants propres à chaque application. Accessibles uniquement sur un téléphone rooté"
-                )
-                )
-
-                val rootLayout = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(48, 48, 48, 48)
-                    setBackgroundColor(0xFFF5F5F5.toInt())
-                }
-
-                // Titre de la page principale
-                val titleView = TextView(this).apply {
-                    text = "Identifiants android"
-                    textSize = 22f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(0xFF333333.toInt())
-                    gravity = Gravity.CENTER_HORIZONTAL
-                    setPadding(0, 0, 0, 48)
-                }
-
-                rootLayout.addView(titleView)
-
-                // Création d'une bulle pour chaque ID de la liste
-                infoList.forEach { (label, value, desc) ->
-                    rootLayout.addView(createInfoItem(label, value, desc))
-                }
-
-                setContentView(rootLayout)
+                showMainScreen(result, deviceId)
             }
-        }
+        }.start()
     }
-    private fun createInfoItem(
-        label: String,
-        value: String,
-        desc: String
-    ): LinearLayout {
-        val backgroundDrawable = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColor(0xFFFFFFFF.toInt())
-            setStroke(2, 0xFFDDDDDD.toInt())
-            cornerRadius = 24f
-        }
 
-        return LinearLayout(this).apply {
+    /**
+     * Affiche l'écran de chargement pendant le scan
+     */
+    private fun showLoadingScreen() {
+        val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 24)
-            background = backgroundDrawable
-
-
-            // Space between items
+            gravity = Gravity.CENTER
+            setBackgroundColor(0xFFF5F5F5.toInt())
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = 48
-
-            }
-
-            val labelView = TextView(context).apply {
-                text = label
-                textSize = 14f
-                setTextColor(0xFF777777.toInt())
-            }
-
-            val valueView = TextView(context).apply {
-                text = value
-                textSize = 16f
-                setTypeface(Typeface.MONOSPACE)
-                setTextColor(0xFF000000.toInt())
-                setPadding(0, 8, 0, 16)
-            }
-
-            val descView = TextView(context).apply {
-                text = desc
-                textSize = 14f
-                setPadding(4,4,4,12)
-                setTextColor(0xFF777777.toInt())
-            }
-
-            addView(labelView)
-            addView(valueView)
-            addView(descView)
-
-            // Ajout du bouton de suppression (même si on n'a pas les droits)
-            if (label == "Advertising ID") {
-                val resetButton = Button(context).apply {
-                    text = "Supprimer l'Advertising ID"
-                    setBackgroundColor(Color.RED)
-                    setOnClickListener {
-                        startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
-                    }
-                }
-                addView(resetButton)
-            }
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
         }
+
+        layout.addView(TextView(this).apply {
+            text = "Analyse en cours..."
+            textSize = 20f
+            setTextColor(0xFF333333.toInt())
+            gravity = Gravity.CENTER
+        })
+
+        layout.addView(TextView(this).apply {
+            text = "Scan des applications et paramètres"
+            textSize = 14f
+            setTextColor(0xFF666666.toInt())
+            gravity = Gravity.CENTER
+            setPadding(0, 16, 0, 0)
+        })
+
+        setContentView(layout)
     }
 
+    /**
+     * Affiche l'écran principal avec les résultats
+     */
+    private fun showMainScreen(result: AdintResult, deviceId: String) {
+        // ScrollView pour permettre le défilement
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(0xFFF5F5F5.toInt())
+        }
+
+        // Layout principal
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 48, 48, 48)
+        }
+
+        // === TITRE PRINCIPAL ===
+        rootLayout.addView(TextView(this).apply {
+            text = "Diagnostic ADINT"
+            textSize = 24f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFF333333.toInt())
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, 0, 0, 32)
+        })
+
+        // === SECTION 1: SCORE D'EXPOSITION ===
+        rootLayout.addView(UIComponents.createScoreCard(this, result, scanner))
+
+        // === SECTION 2: PROBLÈMES DÉTECTÉS ===
+        rootLayout.addView(UIComponents.createProblemsCard(this, result.problems))
+
+        // === SECTION 3: ACTIONS RECOMMANDÉES ===
+        rootLayout.addView(UIComponents.createActionsCard(this, result))
+
+        // === SECTION 4: IDENTIFIANTS ===
+        rootLayout.addView(UIComponents.createSectionTitle(this, "Vos identifiants"))
+
+        // Device ID
+        rootLayout.addView(UIComponents.createIdentifierCard(
+            this,
+            "Android Device ID",
+            deviceId,
+            "Cet identifiant n'est modifiable qu'à la réinitialisation d'usine de l'appareil. Son usage pour l'ADINT est explicitement interdit."
+        ))
+
+        // Advertising ID
+        val adIdDescription = buildString {
+            append("Il est possible de supprimer cet identifiant depuis les paramètres de confidentialité.\n\n")
+            if (result.limitTracking) {
+                append("Le suivi publicitaire est limité.")
+            } else {
+                append("Le suivi publicitaire est activé - les applications peuvent créer des pubs personnalisées.")
+            }
+        }
+
+        rootLayout.addView(UIComponents.createIdentifierCard(
+            this,
+            "Advertising ID",
+            result.gaid ?: "Non disponible",
+            adIdDescription,
+            showResetButton = true,
+            onResetClick = {
+                startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS))
+            }
+        ))
+
+        // UUID/Firebase
+        rootLayout.addView(UIComponents.createIdentifierCard(
+            this,
+            "UUID/Firebase ID/GUID",
+            "Non accessible",
+            "Identifiants propres à chaque application. Accessibles uniquement sur un téléphone rooté."
+        ))
+
+        // Ajouter le layout au ScrollView
+        scrollView.addView(rootLayout)
+        setContentView(scrollView)
+    }
 }
