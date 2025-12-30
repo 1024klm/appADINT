@@ -13,13 +13,40 @@ Outil pédagogique permettant de visualiser les signaux observables utilisés po
 
 ## Fonctionnalités
 
-| Section | Description |
-|---------|-------------|
-| Score heuristique | Note de 0 à 10 avec code couleur (vert/orange/rouge) |
-| Signaux détectés | Liste des alertes avec niveau de sévérité |
-| Actions possibles | Boutons vers les paramètres système (ID pub, localisation, DNS...) |
-| Identifiants | ANDROID_ID, GAID (masqués, copiables) |
-| Limites | Disclaimer sur ce que l'app ne détecte pas |
+### 1. Score d'exposition (heuristique)
+- Note de **0 à 10** avec code couleur (vert/orange/rouge)
+- Barre de progression visuelle
+- Détail du calcul affiché (composition du score)
+
+### 2. Signaux détectés
+| Signal | Points |
+|--------|--------|
+| LAT (Limit Ad Tracking) non activé | +3 |
+| GAID accessible | +2 |
+| Apps avec localisation + internet | +1/app (max 3) |
+| Apps avec >10 permissions | +1/app (max 2) |
+
+### 3. Actions possibles
+Boutons vers les paramètres système :
+- Gérer l'ID publicitaire
+- Permissions des applications
+- Paramètres de localisation
+- DNS privé (Android 9+)
+
+### 4. Identifiants
+- **Android Device ID** — masqué par défaut, bouton Copier
+- **Google Advertising ID** — masqué par défaut, boutons Copier + Gérer
+- **UUID/Firebase** — information seulement (non accessible sans root)
+
+### 5. Limites techniques
+Carte disclaimer expliquant ce que l'app **ne détecte pas** (SDK pub, trafic réseau, fingerprinting, etc.)
+
+### 6. UX
+- Écran de chargement pendant le scan
+- Bouton "Relancer l'analyse"
+- Protection contre les scans multiples simultanés
+
+**En résumé** : Un tableau de bord privacy avec score + raccourcis vers les settings système. Pas de modification automatique, juste du diagnostic et du guidage.
 
 ## Installation
 
