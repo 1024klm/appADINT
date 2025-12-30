@@ -48,27 +48,6 @@ Carte disclaimer expliquant ce que l'app **ne détecte pas** (SDK pub, trafic r�
 
 **En résumé** : Un tableau de bord privacy avec score + raccourcis vers les settings système. Pas de modification automatique, juste du diagnostic et du guidage.
 
-## Installation
-
-### Prérequis
-- Android Studio Hedgehog (2023.1.1) ou plus récent
-- Android SDK 36
-- JDK 11+
-
-### Build
-```bash
-cd id_editor/AndroidStudioProjects/ID_EDITOR
-chmod +x gradlew
-./gradlew assembleDebug
-```
-
-L'APK sera généré dans `app/build/outputs/apk/debug/`.
-
-### Installation sur device
-```bash
-adb install app/build/outputs/apk/debug/app-debug.apk
-```
-
 ## Calcul du score
 
 | Signal | Points | API utilisée |
