@@ -12,7 +12,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.gms.ads.identifier.AdvertisingIdClient
 import android.content.Intent
-import android.os.Build
 import android.widget.Button
 
 
