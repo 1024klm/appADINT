@@ -15,7 +15,7 @@ import com.google.android.gms.ads.identifier.AdvertisingIdClient
  * ni le tracking réel effectué par les applications.
  */
 data class AdintResult(
-    val score: Int,                        // Score heuristique sur 10
+    val score: Int,                        // Score de durcissement (10=bien protégé, 0=non protégé)
     val gaid: String?,                     // Google Advertising ID
     val limitAdTrackingEnabled: Boolean,   // Flag LAT (Limit Ad Tracking) de Play Services
     val appsWithLocationAndInternet: Int,  // Nombre d'apps avec ces permissions
@@ -33,10 +33,10 @@ data class Problem(
 
 enum class Severity { CRITICAL, WARNING, INFO }
 
-enum class RiskLevel(val label: String, val color: Int) {
-    LOW("Faible", 0xFF4CAF50.toInt()),
+enum class ProtectionLevel(val label: String, val color: Int) {
+    HIGH("Élevé", 0xFF4CAF50.toInt()),      // Vert = bien protégé
     MEDIUM("Moyen", 0xFFFF9800.toInt()),
-    HIGH("Élevé", 0xFFF44336.toInt())
+    LOW("Faible", 0xFFF44336.toInt())        // Rouge = peu protégé
 }
 
 /**
@@ -231,7 +231,8 @@ class AdintScanner(private val context: Context) {
     }
 
     /**
-     * Calcule le score heuristique (0-10)
+     * Calcule le score de durcissement (0-10)
+     * 10 = téléphone bien durci, 0 = téléphone non durci
      *
      * ATTENTION : Ce score est INDICATIF et non scientifique.
      */
@@ -241,21 +242,21 @@ class AdintScanner(private val context: Context) {
         locationApps: Int,
         heavyPermissionApps: Int
     ): Int {
-        var score = 0
+        var penalties = 0
 
-        if (!latEnabled) score += POINTS_LAT_DISABLED
-        if (gaidAccessible) score += POINTS_GAID_ACCESSIBLE
-        score += minOf(locationApps, MAX_RISKY_APP_POINTS) * POINTS_PER_RISKY_APP
-        score += minOf(heavyPermissionApps, MAX_PERMISSION_HEAVY_POINTS) * POINTS_PER_PERMISSION_HEAVY_APP
+        if (!latEnabled) penalties += POINTS_LAT_DISABLED
+        if (gaidAccessible) penalties += POINTS_GAID_ACCESSIBLE
+        penalties += minOf(locationApps, MAX_RISKY_APP_POINTS) * POINTS_PER_RISKY_APP
+        penalties += minOf(heavyPermissionApps, MAX_PERMISSION_HEAVY_POINTS) * POINTS_PER_PERMISSION_HEAVY_APP
 
-        return minOf(score, 10)
+        return maxOf(10 - penalties, 0)
     }
 
-    fun getRiskLevel(score: Int): RiskLevel {
+    fun getProtectionLevel(score: Int): ProtectionLevel {
         return when {
-            score <= 2 -> RiskLevel.LOW
-            score <= 5 -> RiskLevel.MEDIUM
-            else -> RiskLevel.HIGH
+            score >= 8 -> ProtectionLevel.HIGH
+            score >= 5 -> ProtectionLevel.MEDIUM
+            else -> ProtectionLevel.LOW
         }
     }
 }

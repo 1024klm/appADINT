@@ -129,10 +129,13 @@ class MainActivity : AppCompatActivity() {
         // === SECTION 3: ACTIONS ===
         rootLayout.addView(UIComponents.createActionsCard(this, result))
 
-        // === SECTION 4: LIMITES TECHNIQUES ===
-        rootLayout.addView(UIComponents.createLimitationsCard(this))
+        // === SECTION 4: RECOMMANDATIONS DE DURCISSEMENT ===
+        rootLayout.addView(UIComponents.createRecommendationsCard(this))
 
-        // === SECTION 5: IDENTIFIANTS ===
+        // === SECTION 5: LIMITES TECHNIQUES (bouton vers page séparée) ===
+        rootLayout.addView(UIComponents.createLimitationsButton(this))
+
+        // === SECTION 6: IDENTIFIANTS ===
         rootLayout.addView(UIComponents.createSectionTitle(this, "Vos identifiants"))
 
         // Device ID (masqué, avec bouton copier)
@@ -146,7 +149,12 @@ class MainActivity : AppCompatActivity() {
         ))
 
         // Advertising ID (masqué, avec boutons Copier + Gérer)
-        val maskedGaid = result.gaid?.let { maskIdentifier(it) } ?: "Non disponible"
+        val gaidDisabled = result.gaid == null || result.gaid == "00000000-0000-0000-0000-000000000000"
+        val displayGaid = when {
+            result.gaid == null -> "Non disponible"
+            gaidDisabled -> "ID désactivé"
+            else -> maskIdentifier(result.gaid)
+        }
         val latStatus = if (result.limitAdTrackingEnabled) {
             "LAT activé - vous avez demandé la limitation du suivi."
         } else {
@@ -156,13 +164,20 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(UIComponents.createIdentifierCard(
             context = this,
             label = "Google Advertising ID (GAID)",
-            displayValue = maskedGaid,
+            displayValue = displayGaid,
             description = "$latStatus\n\nCet ID peut être réinitialisé ou supprimé dans les paramètres.",
-            realValue = result.gaid,  // Pour le bouton Copier
+            realValue = if (gaidDisabled) null else result.gaid,  // Pas de bouton Copier si désactivé
             showActionButton = true,
-            actionButtonText = "Gérer",
+            actionButtonText = "Supprimer",
+            actionHint = "Confidentialité → Annonces → Supprimer l'ID publicitaire",
             onActionClick = {
-                startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS))
+                // Essayer d'ouvrir directement les paramètres d'annonces Google
+                try {
+                    startActivity(Intent("com.google.android.gms.settings.ADS_PRIVACY"))
+                } catch (e: Exception) {
+                    // Fallback vers les paramètres de confidentialité
+                    startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS))
+                }
             }
         ))
 
